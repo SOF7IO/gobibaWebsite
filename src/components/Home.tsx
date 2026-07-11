@@ -682,7 +682,26 @@ function IndividualInquiryCTA({ mobileSticky = false }: { mobileSticky?: boolean
   );
 }
 
+// ─── Packages hint ────────────────────────────────────────────────────────────
+
+function DesktopPackagesHint() {
+  return (
+    <div className="hidden sm:flex flex-col items-center text-center gap-2 mb-5 lg:mb-6">
+      <p className="text-[11px] lg:text-xs uppercase tracking-[0.28em] text-black/35 font-medium">
+        Kliknij pakiet — szczegóły, opcje i rezerwacja
+      </p>
+      <p className="flex items-center justify-center gap-1.5 text-xs lg:text-sm text-black/40">
+        <MousePointerClick className="w-3.5 h-3.5 flex-shrink-0 opacity-70" strokeWidth={1.75} />
+        Pakiety są klikalne
+      </p>
+    </div>
+  );
+}
+
 // ─── Mobile horizontal packages scroller ─────────────────────────────────────
+
+const MOBILE_PACKAGE_SCROLL_RANGE_MULTIPLIER = 2;
+const MOBILE_PACKAGE_SCROLL_SMOOTHING = 0.16;
 
 function MobilePackagesScroller({
   packages,
@@ -694,8 +713,11 @@ function MobilePackagesScroller({
   const containerRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
-  const metricsRef = useRef({ maxTranslate: 0, endHold: 0, scrollStart: 0, scrollEnd: 1 });
+  const metricsRef = useRef({ maxTranslate: 0, endHold: 0, scrollStart: 0, scrollEnd: 1, scrollRange: 0 });
   const activeIdxRef = useRef(0);
+  const translateRef = useRef(0);
+  const targetTranslateRef = useRef(0);
+  const rafRef = useRef(0);
   const [activeIdx, setActiveIdx] = useState(0);
 
   useEffect(() => {
@@ -716,27 +738,37 @@ function MobilePackagesScroller({
 
       const endHold = Math.round(window.innerHeight * 0.12);
       const stickySpan = stickyRef.current?.offsetHeight ?? window.innerHeight;
-      container.style.height = `${maxTranslate + endHold + stickySpan}px`;
+      const scrollRange = maxTranslate * MOBILE_PACKAGE_SCROLL_RANGE_MULTIPLIER;
+      container.style.height = `${scrollRange + endHold + stickySpan}px`;
 
       const rect = container.getBoundingClientRect();
       const scrollStart = window.scrollY + rect.top;
-      const scrollEnd = scrollStart + maxTranslate + endHold;
-      metricsRef.current = { maxTranslate, endHold, scrollStart, scrollEnd };
+      const scrollEnd = scrollStart + scrollRange + endHold;
+      metricsRef.current = { maxTranslate, endHold, scrollStart, scrollEnd, scrollRange };
+    };
+
+    const applyTransform = () => {
+      translateRef.current += (targetTranslateRef.current - translateRef.current) * MOBILE_PACKAGE_SCROLL_SMOOTHING;
+      if (Math.abs(targetTranslateRef.current - translateRef.current) < 0.35) {
+        translateRef.current = targetTranslateRef.current;
+      }
+      track.style.transform = `translate3d(-${translateRef.current}px, 0, 0)`;
+      rafRef.current = requestAnimationFrame(applyTransform);
     };
 
     const onScroll = () => {
-      const { maxTranslate, scrollStart, scrollEnd } = metricsRef.current;
+      const { maxTranslate, scrollStart, scrollEnd, scrollRange } = metricsRef.current;
       const y = window.scrollY;
 
       let progress = 0;
       if (y <= scrollStart) progress = 0;
       else if (y >= scrollEnd) progress = 1;
-      else if (maxTranslate === 0) progress = 0;
-      else progress = Math.min(1, (y - scrollStart) / maxTranslate);
+      else if (scrollRange === 0) progress = 0;
+      else progress = Math.min(1, (y - scrollStart) / scrollRange);
 
-      track.style.transform = `translate3d(-${progress * maxTranslate}px, 0, 0)`;
+      targetTranslateRef.current = progress * maxTranslate;
 
-      const idx = y >= scrollStart + maxTranslate
+      const idx = progress >= 1
         ? packages.length - 1
         : maxTranslate === 0
           ? 0
@@ -752,6 +784,7 @@ function MobilePackagesScroller({
 
     measure();
     onScroll();
+    rafRef.current = requestAnimationFrame(applyTransform);
     requestAnimationFrame(() => {
       measure();
       onScroll();
@@ -770,6 +803,7 @@ function MobilePackagesScroller({
     if (stickyRef.current) ro.observe(stickyRef.current);
 
     return () => {
+      cancelAnimationFrame(rafRef.current);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
       ro.disconnect();
@@ -999,7 +1033,7 @@ export default function Home() {
         </div>
 
         <div className={`relative z-10 ${SECTION_INNER}`}>
-          <div className="flex flex-col min-h-[calc(100dvh-3.5rem)] lg:min-h-[90vh] pt-10 pb-8 sm:pt-12 sm:pb-10 lg:py-20 xl:py-24 justify-center lg:justify-center lg:items-start lg:max-w-3xl xl:max-w-4xl">
+          <div className="flex flex-col min-h-[calc(100dvh-3.5rem)] lg:min-h-[90vh] pt-10 pb-8 sm:pt-12 sm:pb-10 lg:py-20 xl:py-24 justify-center items-center lg:items-start lg:max-w-3xl xl:max-w-4xl">
 
             <div className="mb-6 sm:mb-7 flex justify-center lg:hidden w-full">
               <ImageWithFallback
@@ -1014,11 +1048,11 @@ export default function Home() {
               Tobie pozostaje dobra zabawa.
             </p>
 
-            <div className="flex flex-col w-full max-w-xs sm:max-w-none lg:max-w-none sm:flex-row sm:flex-wrap gap-3 lg:gap-4 mb-8 lg:mb-12 items-stretch sm:items-center justify-center lg:justify-start">
-              <a href="#pakiety" className="inline-flex items-center justify-center gap-2 font-semibold text-sm lg:text-base text-white px-6 py-3.5 lg:px-8 lg:py-4 rounded-full bg-[#130018] hover:bg-black transition-colors lg:shadow-xl lg:shadow-[#130018]/20">
+            <div className="flex flex-col w-full max-w-xs mx-auto lg:mx-0 sm:max-w-none lg:max-w-none sm:flex-row sm:flex-wrap gap-3 lg:gap-4 mb-8 lg:mb-12 items-center sm:items-center justify-center lg:justify-start">
+              <a href="#pakiety" className="inline-flex items-center justify-center gap-2 w-full sm:w-auto font-semibold text-sm lg:text-base text-white px-6 py-3.5 lg:px-8 lg:py-4 rounded-full bg-[#130018] hover:bg-black transition-colors lg:shadow-xl lg:shadow-[#130018]/20">
                 Sprawdź ofertę <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5" />
               </a>
-              <a href="#jak-to-dziala" className="inline-flex items-center justify-center gap-2 font-medium text-sm lg:text-base text-black/55 lg:text-[#130018]/70 px-5 py-3.5 lg:px-7 lg:py-4 rounded-full border border-black/12 bg-white/60 hover:bg-white/80 lg:bg-white/45 lg:backdrop-blur-sm lg:hover:bg-white/65 transition-colors">
+              <a href="#jak-to-dziala" className="inline-flex items-center justify-center gap-2 w-full sm:w-auto font-medium text-sm lg:text-base text-black/55 lg:text-[#130018]/70 px-5 py-3.5 lg:px-7 lg:py-4 rounded-full border border-black/12 bg-white/60 hover:bg-white/80 lg:bg-white/45 lg:backdrop-blur-sm lg:hover:bg-white/65 transition-colors">
                 Jak to działa
               </a>
             </div>
@@ -1061,6 +1095,8 @@ export default function Home() {
 
         <div id="pakiety-tiles">
         <MobilePackagesScroller packages={PACKAGES} onSelect={setDetailPkg} />
+
+        <DesktopPackagesHint />
 
         <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-12 gap-5 xl:gap-6 mb-6 sm:mb-8">
           {PACKAGES.map(pkg => (
