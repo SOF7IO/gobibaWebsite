@@ -9,13 +9,13 @@ import {
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Sof7Logo } from "@/components/Sof7Logo";
+import { useSiteConfig } from "@/components/SiteConfigProvider";
 import type { BookingRequestPayload } from "@/lib/booking";
 import {
   calcOutOfZoneDeliveryFee,
   DELIVERY_FREE_ZONE,
   DELIVERY_RATE_ONE_WAY,
   DELIVERY_TRIPS,
-  PACKAGES_DATA,
   SERVICE_LEVELS,
   type PackageData,
   type ServiceLevelId,
@@ -106,21 +106,11 @@ type Package = PackageData & {
   Icon: any;
 };
 
-const PACKAGES: Package[] = PACKAGES_DATA.map((pkg) => ({
-  ...pkg,
-  Icon: PACKAGE_ICONS[pkg.id as keyof typeof PACKAGE_ICONS],
-}));
-
-function generateBookedDates(id: string): Set<string> {
-  const booked = new Set<string>();
-  const seed = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  const today = new Date();
-  for (let i = 0; i < 9; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + ((seed * (i + 1) * 7) % 27) + 1);
-    booked.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-  }
-  return booked;
+function withPackageIcons(data: PackageData[]): Package[] {
+  return data.map((pkg) => ({
+    ...pkg,
+    Icon: PACKAGE_ICONS[pkg.id as keyof typeof PACKAGE_ICONS],
+  }));
 }
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
@@ -129,18 +119,17 @@ const MONTHS_PL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipi
 const DAYS_PL = ["Pn","Wt","Śr","Cz","Pt","Sb","Nd"];
 
 function CalendarPicker({
-  packageId,
   selectedDates,
   onToggle,
+  bookedDates,
 }: {
-  packageId: string;
   selectedDates: Set<string>;
   onToggle: (d: string) => void;
+  bookedDates: Set<string>;
 }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-  const bookedDates = useMemo(() => generateBookedDates(packageId), [packageId]);
   const startOffset = (() => { const d = new Date(year, month, 1).getDay(); return d === 0 ? 6 : d - 1; })();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const fmt = (d: number) => `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
@@ -223,7 +212,27 @@ function Steps({ current }: { current: 1 | 2 | 3 }) {
 
 // ─── Booking flow ─────────────────────────────────────────────────────────────
 
-function BookingFlow({ pkg, addonIds, onClose }: { pkg: Package; addonIds: Set<string>; onClose: () => void }) {
+type ServiceLevelOption = {
+  id: ServiceLevelId;
+  name: string;
+  desc: string;
+  priceAdd: number;
+  badge?: string;
+};
+
+function BookingFlow({
+  pkg,
+  addonIds,
+  onClose,
+  serviceLevels,
+  bookedDates,
+}: {
+  pkg: Package;
+  addonIds: Set<string>;
+  onClose: () => void;
+  serviceLevels: ServiceLevelOption[];
+  bookedDates: Set<string>;
+}) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [serviceLevel, setServiceLevel] = useState<ServiceLevelId>("delivery");
@@ -232,7 +241,7 @@ function BookingFlow({ pkg, addonIds, onClose }: { pkg: Package; addonIds: Set<s
   const [form, setForm] = useState({ name: "", phone: "", email: "", company: "", notes: "" });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const svc = SERVICE_LEVELS.find(s => s.id === serviceLevel)!;
+  const svc = serviceLevels.find(s => s.id === serviceLevel)!;
   const chosenAddons = pkg.addons.filter(a => addonIds.has(a.id));
   const addonsPerDay = chosenAddons.reduce((s, a) => s + a.price, 0);
   const dayCount = selectedDates.size;
@@ -370,11 +379,11 @@ function BookingFlow({ pkg, addonIds, onClose }: { pkg: Package; addonIds: Set<s
 
           {step === 1 && (
             <div className="space-y-6">
-              <CalendarPicker packageId={pkg.id} selectedDates={selectedDates} onToggle={toggleDate} />
+              <CalendarPicker selectedDates={selectedDates} onToggle={toggleDate} bookedDates={bookedDates} />
               <div>
                 <p className="text-[10px] uppercase tracking-[0.3em] text-black/30 mb-3">Jaka obsługa?</p>
                 <div className="space-y-2">
-                  {SERVICE_LEVELS.map(s => (
+                  {serviceLevels.map(s => (
                     <button key={s.id} type="button" onClick={() => setServiceLevel(s.id as ServiceLevelId)}
                       className={[
                         "w-full text-left p-4 rounded-xl border transition-all",
@@ -664,11 +673,11 @@ function IndividualInquiryCTA({ mobileSticky = false }: { mobileSticky?: boolean
       }`}
     >
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-black/25 mb-2">Zapytanie indywidualne</p>
+        <p className="text-xs uppercase tracking-[0.3em] text-black/25 mb-2">Zapytanie indywidualne</p>
         <h3 className="text-lg sm:text-2xl font-black text-black/80 mb-1.5" style={{ fontFamily: "'Oxanium', sans-serif" }}>
           Napisz nam czego potrzebujesz
         </h3>
-        <p className="text-sm text-black/40 max-w-md leading-relaxed mx-auto sm:mx-0">
+        <p className="text-base text-black/40 max-w-md leading-relaxed mx-auto sm:mx-0">
           Nie wiesz co wybrać? albo masz coś niestandardowego na głowie? Zobaczymy co da się zrobić.
         </p>
       </div>
@@ -858,6 +867,8 @@ function MobilePackagesScroller({
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function Home() {
+  const { packages: configPackages, serviceLevels, getBookedDates, isEditMode } = useSiteConfig();
+  const packages = useMemo(() => withPackageIcons(configPackages), [configPackages]);
   const [detailPkg, setDetailPkg]   = useState<Package | null>(null);
   const [bookingPkg, setBookingPkg] = useState<Package | null>(null);
   const [addonIds, setAddonIds]     = useState<Set<string>>(new Set());
@@ -893,7 +904,16 @@ export default function Home() {
   }, [scrollToPakietyTiles]);
 
   return (
-    <main className="min-h-screen max-lg:bg-transparent bg-[#fafaf9] text-[#130018]" style={{ fontFamily: "'Manrope', sans-serif" }}>
+    <main className={`min-h-screen max-lg:bg-transparent bg-[#fafaf9] text-[#130018] ${isEditMode ? "pb-[min(78dvh,680px)]" : ""}`} style={{ fontFamily: "'Manrope', sans-serif" }}>
+      {isEditMode && (
+        <div className="fixed top-14 sm:top-16 inset-x-0 z-[55] pointer-events-none">
+          <div className="pointer-events-auto mx-auto max-w-7xl px-4 sm:px-6">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 text-center shadow-sm">
+              Tryb edycji aktywny — zmiany widzą odwiedzający po zapisaniu (Ctrl+Shift+E, aby ukryć panel)
+            </div>
+          </div>
+        </div>
+      )}
       <h1 className="sr-only">
         gobiba.pl — wynajem sprzętu eventowego w Trójmieście: karaoke, strefa kibica, namiot klubowy i prezentacje
       </h1>
@@ -915,7 +935,7 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-b from-[#fafaf9]/56 via-[#fafaf9]/72 to-[#fafaf9]/82" />
       </div>
 
-      <header className="sticky top-0 z-30 border-b border-black/6 bg-white/80 max-lg:bg-white/70 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-black/6 bg-white/80 max-lg:bg-white/70 lg:bg-white/55 backdrop-blur-xl">
         <nav aria-label="Główne menu" className={`${SECTION_INNER} h-14 sm:h-16 flex items-center justify-between`}>
           <a href="#" className="flex-shrink-0">
             <ImageWithFallback src={logoMark} alt="gobiba" className="h-9 sm:h-[3.75rem] w-auto object-contain" />
@@ -1005,10 +1025,10 @@ export default function Home() {
         </div>
       )}
 
-      <section className="relative z-10 overflow-hidden min-h-dvh lg:min-h-[90vh]">
+      <section className="relative z-10 overflow-hidden min-h-[calc(100dvh-3.5rem)] sm:min-h-[calc(100dvh-4rem)] lg:-mt-16 lg:pt-16 lg:h-dvh lg:min-h-0">
         <div aria-hidden className="hidden lg:block absolute inset-0 z-0 overflow-hidden pointer-events-none">
           <div
-            className="flex h-full min-h-[90vh] w-max"
+            className="flex h-dvh w-max"
             style={{ animation: "heroPan 200s linear infinite", willChange: "transform" }}
           >
             {panoramaImages.map((src, i) => (
@@ -1016,12 +1036,11 @@ export default function Home() {
                 key={i}
                 src={src}
                 alt=""
-                className="h-full min-h-[90vh] w-auto flex-shrink-0 block opacity-[0.55] saturate-[0.85]"
+                className="h-dvh w-auto flex-shrink-0 block opacity-[0.55] saturate-[0.85]"
               />
             ))}
           </div>
-          <div className="absolute inset-0 bg-gradient-to-r from-[#fafaf9]/95 from-0% via-[#fafaf9]/72 via-[38%] to-[#fafaf9]/15 to-100%" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#fafaf9]/50 via-transparent to-[#fafaf9]/15" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#fafaf9]/95 from-0% via-[#fafaf9]/60 via-[42%] to-transparent to-100%" />
         </div>
 
         <div className="hidden lg:block absolute bottom-10 xl:bottom-12 right-6 xl:right-10 2xl:right-14 z-20 w-[min(20rem,26vw)] pointer-events-none">
@@ -1032,9 +1051,10 @@ export default function Home() {
           />
         </div>
 
-        <div className={`relative z-10 ${SECTION_INNER}`}>
-          <div className="flex flex-col min-h-[calc(100dvh-3.5rem)] lg:min-h-[90vh] pt-10 pb-8 sm:pt-12 sm:pb-10 lg:py-20 xl:py-24 justify-center items-center lg:items-start lg:max-w-3xl xl:max-w-4xl">
+        <div className={`relative z-10 h-full ${SECTION_INNER}`}>
+          <div className="flex flex-col h-full min-h-[calc(100dvh-3.5rem)] sm:min-h-[calc(100dvh-4rem)] lg:min-h-[calc(100dvh-4rem)] lg:max-w-none">
 
+            <div className="flex flex-col flex-1 justify-center items-center lg:items-start lg:max-w-3xl xl:max-w-4xl pt-10 pb-6 sm:pt-12 sm:pb-8 lg:py-0">
             <div className="mb-6 sm:mb-7 flex justify-center lg:hidden w-full">
               <ImageWithFallback
                 src={logoFull}
@@ -1048,7 +1068,7 @@ export default function Home() {
               Tobie pozostaje dobra zabawa.
             </p>
 
-            <div className="flex flex-col w-full max-w-xs mx-auto lg:mx-0 sm:max-w-none lg:max-w-none sm:flex-row sm:flex-wrap gap-3 lg:gap-4 mb-8 lg:mb-12 items-center sm:items-center justify-center lg:justify-start">
+            <div className="flex flex-col w-full max-w-xs mx-auto lg:mx-0 sm:max-w-none lg:max-w-none sm:flex-row sm:flex-wrap gap-3 lg:gap-4 items-center sm:items-center justify-center lg:justify-start">
               <a href="#pakiety" className="inline-flex items-center justify-center gap-2 w-full sm:w-auto font-semibold text-sm lg:text-base text-white px-6 py-3.5 lg:px-8 lg:py-4 rounded-full bg-[#130018] hover:bg-black transition-colors lg:shadow-xl lg:shadow-[#130018]/20">
                 Sprawdź ofertę <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5" />
               </a>
@@ -1056,8 +1076,9 @@ export default function Home() {
                 Jak to działa
               </a>
             </div>
+            </div>
 
-            <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:gap-8 xl:gap-10 w-full max-w-md sm:max-w-lg lg:max-w-2xl pt-6 lg:pt-10 border-t border-black/10 lg:border-black/15 mx-auto lg:mx-0 items-stretch">
+            <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:gap-8 xl:gap-10 w-full max-w-md sm:max-w-lg lg:max-w-2xl pt-6 lg:pt-0 pb-6 lg:pb-8 border-t border-black/10 lg:border-white/25 mx-auto lg:mx-0 lg:max-w-3xl items-stretch flex-shrink-0">
               {HERO_TRUST.map((item) => (
                 <div
                   key={item.label}
@@ -1094,12 +1115,12 @@ export default function Home() {
         </div>
 
         <div id="pakiety-tiles">
-        <MobilePackagesScroller packages={PACKAGES} onSelect={setDetailPkg} />
+        <MobilePackagesScroller packages={packages} onSelect={setDetailPkg} />
 
         <DesktopPackagesHint />
 
         <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-12 gap-5 xl:gap-6 mb-6 sm:mb-8">
-          {PACKAGES.map(pkg => (
+          {packages.map(pkg => (
             <div key={pkg.id} className="lg:col-span-3">
               <LargeTile pkg={pkg} onClick={() => setDetailPkg(pkg)} />
             </div>
@@ -1119,7 +1140,7 @@ export default function Home() {
       >
         <div className={`${SECTION_INNER} text-center sm:text-left`}>
           <div className="mb-5 sm:mb-8">
-            <p className="text-[10px] uppercase tracking-[0.4em] text-black/40 mb-2 sm:mb-3 font-semibold">Prosty proces</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-black/40 mb-2 sm:mb-3 font-semibold">Prosty proces</p>
             <h2
               className="text-2xl sm:text-4xl font-black tracking-tight text-[#130018] sm:text-black/80"
               style={{ fontFamily: "'Oxanium', sans-serif" }}
@@ -1157,7 +1178,7 @@ export default function Home() {
                     </span>
                     <h3 className="text-sm sm:text-base font-bold text-[#130018] sm:text-black/70 leading-snug">{title}</h3>
                   </div>
-                  <p className="text-xs sm:text-sm text-black/55 sm:text-black/35 leading-snug sm:leading-relaxed">{desc}</p>
+                  <p className="text-sm sm:text-base text-black/55 sm:text-black/35 leading-snug sm:leading-relaxed">{desc}</p>
                 </div>
               </div>
             ))}
@@ -1168,14 +1189,14 @@ export default function Home() {
       <section id="kontakt" className="border-t border-black/6 bg-[#fafaf9] sm:bg-white relative z-10 py-8 sm:py-16">
         <div className={`${SECTION_INNER} grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-12 xl:gap-16`}>
           <div className="flex flex-col items-center md:items-start text-center md:text-left rounded-2xl border border-black/8 bg-white p-5 shadow-sm sm:p-0 sm:border-0 sm:bg-transparent sm:shadow-none sm:rounded-none">
-            <p className="text-[10px] uppercase tracking-[0.4em] text-black/40 mb-2 sm:mb-3 font-semibold">Kontakt</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-black/40 mb-2 sm:mb-3 font-semibold">Kontakt</p>
             <h2
               className="text-2xl sm:text-4xl font-black tracking-tight text-[#130018] sm:text-black/80 mb-3 sm:mb-4 leading-tight"
               style={{ fontFamily: "'Oxanium', sans-serif" }}
             >
               Masz pytania?<br />Śmiało pisz.
             </h2>
-            <p className="text-sm text-black/55 sm:text-black/40 leading-snug sm:leading-relaxed max-w-xs mx-auto md:mx-0">
+            <p className="text-base text-black/55 sm:text-black/40 leading-snug sm:leading-relaxed max-w-xs mx-auto md:mx-0">
               Pomożemy dobrać sprzęt i odpowiemy na wszystko — od cen po szczegóły logistyczne.
             </p>
           </div>
@@ -1194,8 +1215,8 @@ export default function Home() {
                   <I className="w-4 h-4 text-[#130018]/70" strokeWidth={1.75} />
                 </div>
                 <div className="min-w-0 text-left">
-                  <p className="text-[10px] text-black/40 uppercase tracking-wider mb-0.5">{label}</p>
-                  <p className="text-sm text-[#130018] font-semibold truncate">{value}</p>
+                  <p className="text-xs text-black/40 uppercase tracking-wider mb-0.5">{label}</p>
+                  <p className="text-base text-[#130018] font-semibold truncate">{value}</p>
                 </div>
               </a>
             ))}
@@ -1206,12 +1227,12 @@ export default function Home() {
       <footer className="border-t border-black/8 bg-white relative z-10">
         <div className={`${SECTION_INNER} flex flex-col sm:flex-row items-center justify-between gap-5 sm:gap-6 py-8 sm:py-10`}>
           <ImageWithFallback src={logoMark} alt="gobiba" className="h-[4.5rem] sm:h-[5.25rem] w-auto object-contain" />
-          <p className="text-xs sm:text-sm text-black/55 text-center leading-relaxed max-w-md">
+          <p className="text-sm sm:text-base text-black/55 text-center leading-relaxed max-w-md">
             © 2025 gobiba.pl — Wynajem sprzętu eventowego — Trójmiasto
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
             {["Regulamin", "Polityka prywatności"].map(t => (
-              <a key={t} href="#" className="text-xs sm:text-sm font-medium text-black/55 hover:text-[#130018] transition-colors">{t}</a>
+              <a key={t} href="#" className="text-sm sm:text-base font-medium text-black/55 hover:text-[#130018] transition-colors">{t}</a>
             ))}
           </div>
         </div>
@@ -1238,7 +1259,15 @@ export default function Home() {
           onBook={(addons) => { setAddonIds(addons); setDetailPkg(null); setBookingPkg(detailPkg); }}
         />
       )}
-      {bookingPkg && <BookingFlow pkg={bookingPkg} addonIds={addonIds} onClose={() => setBookingPkg(null)} />}
+      {bookingPkg && (
+        <BookingFlow
+          pkg={bookingPkg}
+          addonIds={addonIds}
+          onClose={() => setBookingPkg(null)}
+          serviceLevels={serviceLevels}
+          bookedDates={getBookedDates(bookingPkg.id)}
+        />
+      )}
     </main>
   );
 }

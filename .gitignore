@@ -25,6 +25,10 @@ yarn-error.log*
 # local env files
 .env*.local
 
+# local admin config fallback (when KV not configured)
+.data/
+
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

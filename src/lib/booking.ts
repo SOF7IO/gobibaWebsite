@@ -1,11 +1,17 @@
 import {
   calcOutOfZoneDeliveryFee,
-  getPackageById,
   SERVICE_LEVELS,
+  PACKAGES_DATA,
   type PackageAddon,
   type PackageData,
   type ServiceLevelId,
 } from "@/lib/packages-data";
+import {
+  applyConfigToPackages,
+  getBookedDatesForPackage,
+  mergeSiteConfig,
+  type SiteConfig,
+} from "@/lib/site-config";
 
 export type BookingCustomer = {
   name: string;
@@ -40,10 +46,18 @@ export type BookingPricing = {
   totalWithDeposit: number;
 };
 
+export type ServiceLevelSummary = {
+  id: ServiceLevelId;
+  name: string;
+  desc: string;
+  priceAdd: number;
+  badge?: string;
+};
+
 export type BookingSummary = {
   package: PackageData;
   dates: string[];
-  serviceLevel: (typeof SERVICE_LEVELS)[number];
+  serviceLevel: ServiceLevelSummary;
   addons: PackageAddon[];
   delivery: {
     outsideZone: boolean;
@@ -79,14 +93,16 @@ export function calculateBookingPricing(input: {
   serviceLevelId: ServiceLevelId;
   addons: PackageAddon[];
   deliveryKm: number;
+  serviceLevelPriceAdd?: number;
 }): BookingPricing {
   const dayCount = input.dates.length;
   const serviceLevel = SERVICE_LEVELS.find((s) => s.id === input.serviceLevelId)!;
+  const priceAdd = input.serviceLevelPriceAdd ?? serviceLevel.priceAdd;
   const addonsPerDay = input.addons.reduce((sum, addon) => sum + addon.price, 0);
   const deliveryFee = calcOutOfZoneDeliveryFee(input.deliveryKm);
   const packageTotal = input.pkg.price * dayCount;
   const addonsTotal = addonsPerDay * dayCount;
-  const serviceTotal = serviceLevel.priceAdd * dayCount;
+  const serviceTotal = priceAdd * dayCount;
   const subtotal = packageTotal + addonsTotal + serviceTotal + deliveryFee;
 
   return {
@@ -101,15 +117,24 @@ export function calculateBookingPricing(input: {
   };
 }
 
-export function parseBookingRequest(body: unknown):
+export function parseBookingRequest(
+  body: unknown,
+  siteConfig?: SiteConfig,
+):
   | { ok: true; summary: BookingSummary }
   | { ok: false; error: string; status: number } {
+  const config = siteConfig ? mergeSiteConfig(siteConfig) : null;
+  const catalog = config ? applyConfigToPackages(PACKAGES_DATA, config) : PACKAGES_DATA;
+
   if (!body || typeof body !== "object") {
     return { ok: false, error: "Nieprawidłowe dane formularza.", status: 400 };
   }
 
   const payload = body as Partial<BookingRequestPayload>;
-  const pkg = typeof payload.packageId === "string" ? getPackageById(payload.packageId) : undefined;
+  const pkg =
+    typeof payload.packageId === "string"
+      ? catalog.find((p) => p.id === payload.packageId)
+      : undefined;
   if (!pkg) {
     return { ok: false, error: "Nie znaleziono wybranego pakietu.", status: 400 };
   }
@@ -127,11 +152,25 @@ export function parseBookingRequest(body: unknown):
     return { ok: false, error: "Wybrany termin jest już niedostępny.", status: 400 };
   }
 
+  if (dates.some(isPastDate)) {
+    return { ok: false, error: "Wybrany termin jest już niedostępny.", status: 400 };
+  }
+  if (config && typeof payload.packageId === "string") {
+    const booked = getBookedDatesForPackage(config, payload.packageId);
+    if (dates.some((d) => booked.has(d))) {
+      return { ok: false, error: "Wybrany termin jest już zajęty.", status: 409 };
+    }
+  }
+
   const serviceLevelId = payload.serviceLevelId;
-  const serviceLevel = SERVICE_LEVELS.find((s) => s.id === serviceLevelId);
-  if (!serviceLevel) {
+  const serviceLevelBase = SERVICE_LEVELS.find((s) => s.id === serviceLevelId);
+  if (!serviceLevelBase) {
     return { ok: false, error: "Wybierz poziom obsługi.", status: 400 };
   }
+  const serviceLevel = {
+    ...serviceLevelBase,
+    priceAdd: config?.serviceLevels[serviceLevelBase.id] ?? serviceLevelBase.priceAdd,
+  };
 
   const addonIds = Array.isArray(payload.addonIds)
     ? payload.addonIds.filter((id): id is string => typeof id === "string")
@@ -177,6 +216,7 @@ export function parseBookingRequest(body: unknown):
     serviceLevelId: serviceLevel.id,
     addons,
     deliveryKm,
+    serviceLevelPriceAdd: serviceLevel.priceAdd,
   });
 
   return {

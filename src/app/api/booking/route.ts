@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBookingRequest } from "@/lib/booking";
 import { sendBookingEmails } from "@/lib/email/send-booking-email";
+import { loadSiteConfig } from "@/lib/site-config-store";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Nieprawidłowy format żądania." }, { status: 400 });
   }
 
-  const parsed = parseBookingRequest(body);
+  const config = await loadSiteConfig();
+  const parsed = parseBookingRequest(body, config);
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   }
