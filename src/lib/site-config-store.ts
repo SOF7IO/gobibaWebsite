@@ -7,23 +7,33 @@ import {
   type SiteConfig,
 } from "@/lib/site-config";
 
-const KV_KEY = "gobiba:site-config";
+const BLOB_PATH = "gobiba/site-config.json";
 const LOCAL_PATH = path.join(process.cwd(), ".data", "site-config.json");
 
-function hasKvEnv(): boolean {
-  const url = process.env.KV_REST_API_URL?.trim();
-  const token = process.env.KV_REST_API_TOKEN?.trim();
-  return Boolean(url && token);
+function hasBlobEnv(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
 }
 
-async function kvGet<T>(key: string): Promise<T | null> {
-  const { kv } = await import("@vercel/kv");
-  return kv.get<T>(key);
+async function readBlobConfig(): Promise<SiteConfig | null> {
+  const { get } = await import("@vercel/blob");
+  const result = await get(BLOB_PATH, {
+    access: "public",
+    useCache: false,
+  });
+  if (!result?.stream) return null;
+
+  const text = await new Response(result.stream).text();
+  return validateSiteConfig(JSON.parse(text));
 }
 
-async function kvSet(key: string, value: SiteConfig): Promise<void> {
-  const { kv } = await import("@vercel/kv");
-  await kv.set(key, value);
+async function writeBlobConfig(config: SiteConfig): Promise<void> {
+  const { put } = await import("@vercel/blob");
+  await put(BLOB_PATH, JSON.stringify(config, null, 2), {
+    access: "public",
+    allowOverwrite: true,
+    contentType: "application/json",
+    cacheControlMaxAge: 60,
+  });
 }
 
 async function readLocalConfig(): Promise<SiteConfig | null> {
@@ -41,12 +51,12 @@ async function writeLocalConfig(config: SiteConfig): Promise<void> {
 }
 
 export async function loadSiteConfig(): Promise<SiteConfig> {
-  if (hasKvEnv()) {
+  if (hasBlobEnv()) {
     try {
-      const stored = await kvGet<Partial<SiteConfig>>(KV_KEY);
-      return mergeSiteConfig(stored);
+      const stored = await readBlobConfig();
+      if (stored) return mergeSiteConfig(stored);
     } catch (error) {
-      console.error("[site-config] KV read failed, falling back to local file:", error);
+      console.error("[site-config] Blob read failed, falling back to local file:", error);
     }
   }
 
@@ -60,19 +70,19 @@ export async function saveSiteConfig(config: SiteConfig): Promise<SiteConfig> {
     updatedAt: new Date().toISOString(),
   };
 
-  if (hasKvEnv()) {
+  if (hasBlobEnv()) {
     try {
-      await kvSet(KV_KEY, next);
+      await writeBlobConfig(next);
       return next;
     } catch (error) {
-      console.error("[site-config] KV write failed, falling back to local file:", error);
+      console.error("[site-config] Blob write failed, falling back to local file:", error);
     }
   }
 
   await writeLocalConfig(next);
-  if (process.env.NODE_ENV === "production" && !hasKvEnv()) {
+  if (process.env.NODE_ENV === "production" && !hasBlobEnv()) {
     console.warn(
-      "[site-config] KV not configured — saved locally only. Add Upstash Redis on Vercel for production persistence.",
+      "[site-config] Blob not configured — saved locally only. Add Vercel Blob storage for production persistence.",
     );
   }
 
@@ -81,16 +91,18 @@ export async function saveSiteConfig(config: SiteConfig): Promise<SiteConfig> {
 
 export async function ensureSiteConfig(): Promise<SiteConfig> {
   const current = await loadSiteConfig();
-  if (hasKvEnv()) {
+
+  if (hasBlobEnv()) {
     try {
-      const stored = await kvGet(KV_KEY);
+      const stored = await readBlobConfig();
       if (!stored) {
         const defaults = buildDefaultSiteConfig();
-        await kvSet(KV_KEY, defaults);
+        await writeBlobConfig(defaults);
         return defaults;
       }
+      return mergeSiteConfig(stored);
     } catch (error) {
-      console.error("[site-config] KV ensure failed, falling back to local file:", error);
+      console.error("[site-config] Blob ensure failed, falling back to local file:", error);
     }
   }
 
