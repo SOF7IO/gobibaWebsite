@@ -16,20 +16,28 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!verifyAdminToken(getTokenFromRequest(request))) return unauthorized();
-
-  let body: unknown;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Nieprawidłowy format danych." }, { status: 400 });
-  }
+    if (!verifyAdminToken(getTokenFromRequest(request))) return unauthorized();
 
-  const config = validateSiteConfig(body);
-  if (!config) {
-    return NextResponse.json({ error: "Nieprawidłowa konfiguracja." }, { status: 400 });
-  }
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Nieprawidłowy format danych." }, { status: 400 });
+    }
 
-  const saved = await saveSiteConfig(config);
-  return NextResponse.json({ ok: true, config: saved });
+    const config = validateSiteConfig(body);
+    if (!config) {
+      return NextResponse.json({ error: "Nieprawidłowa konfiguracja." }, { status: 400 });
+    }
+
+    const saved = await saveSiteConfig(config);
+    return NextResponse.json({ ok: true, config: saved });
+  } catch (error) {
+    console.error("[admin/config] PUT failed:", error);
+    return NextResponse.json(
+      { error: "Nie udało się zapisać konfiguracji. Spróbuj ponownie." },
+      { status: 500 },
+    );
+  }
 }

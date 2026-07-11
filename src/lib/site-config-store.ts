@@ -1,4 +1,3 @@
-import { kv } from "@vercel/kv";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import {
@@ -12,7 +11,19 @@ const KV_KEY = "gobiba:site-config";
 const LOCAL_PATH = path.join(process.cwd(), ".data", "site-config.json");
 
 function hasKvEnv(): boolean {
-  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+  const url = process.env.KV_REST_API_URL?.trim();
+  const token = process.env.KV_REST_API_TOKEN?.trim();
+  return Boolean(url && token);
+}
+
+async function kvGet<T>(key: string): Promise<T | null> {
+  const { kv } = await import("@vercel/kv");
+  return kv.get<T>(key);
+}
+
+async function kvSet(key: string, value: SiteConfig): Promise<void> {
+  const { kv } = await import("@vercel/kv");
+  await kv.set(key, value);
 }
 
 async function readLocalConfig(): Promise<SiteConfig | null> {
@@ -32,10 +43,10 @@ async function writeLocalConfig(config: SiteConfig): Promise<void> {
 export async function loadSiteConfig(): Promise<SiteConfig> {
   if (hasKvEnv()) {
     try {
-      const stored = await kv.get<Partial<SiteConfig>>(KV_KEY);
+      const stored = await kvGet<Partial<SiteConfig>>(KV_KEY);
       return mergeSiteConfig(stored);
     } catch (error) {
-      console.error("[site-config] KV read failed:", error);
+      console.error("[site-config] KV read failed, falling back to local file:", error);
     }
   }
 
@@ -50,14 +61,19 @@ export async function saveSiteConfig(config: SiteConfig): Promise<SiteConfig> {
   };
 
   if (hasKvEnv()) {
-    await kv.set(KV_KEY, next);
-  } else {
-    await writeLocalConfig(next);
-    if (process.env.NODE_ENV === "production") {
-      console.warn(
-        "[site-config] KV not configured — saved locally only. Add Upstash Redis on Vercel for production persistence.",
-      );
+    try {
+      await kvSet(KV_KEY, next);
+      return next;
+    } catch (error) {
+      console.error("[site-config] KV write failed, falling back to local file:", error);
     }
+  }
+
+  await writeLocalConfig(next);
+  if (process.env.NODE_ENV === "production" && !hasKvEnv()) {
+    console.warn(
+      "[site-config] KV not configured — saved locally only. Add Upstash Redis on Vercel for production persistence.",
+    );
   }
 
   return next;
@@ -66,19 +82,24 @@ export async function saveSiteConfig(config: SiteConfig): Promise<SiteConfig> {
 export async function ensureSiteConfig(): Promise<SiteConfig> {
   const current = await loadSiteConfig();
   if (hasKvEnv()) {
-    const stored = await kv.get(KV_KEY);
-    if (!stored) {
-      const defaults = buildDefaultSiteConfig();
-      await kv.set(KV_KEY, defaults);
-      return defaults;
-    }
-  } else {
-    const local = await readLocalConfig();
-    if (!local) {
-      const defaults = buildDefaultSiteConfig();
-      await writeLocalConfig(defaults);
-      return defaults;
+    try {
+      const stored = await kvGet(KV_KEY);
+      if (!stored) {
+        const defaults = buildDefaultSiteConfig();
+        await kvSet(KV_KEY, defaults);
+        return defaults;
+      }
+    } catch (error) {
+      console.error("[site-config] KV ensure failed, falling back to local file:", error);
     }
   }
+
+  const local = await readLocalConfig();
+  if (!local) {
+    const defaults = buildDefaultSiteConfig();
+    await writeLocalConfig(defaults);
+    return defaults;
+  }
+
   return current;
 }

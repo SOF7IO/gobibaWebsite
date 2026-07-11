@@ -65,6 +65,18 @@ async function fetchPublicConfig(): Promise<SiteConfig> {
   return res.json();
 }
 
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text.trim()) {
+    throw new Error("Serwer zwrócił pustą odpowiedź. Odśwież stronę i zaloguj się ponownie (Ctrl+Shift+E).");
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("Serwer zwrócił nieprawidłową odpowiedź. Odśwież stronę i zaloguj się ponownie.");
+  }
+}
+
 export function SiteConfigProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<SiteConfig | null>(null);
@@ -100,7 +112,7 @@ export function SiteConfigProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     });
-    const data = (await res.json()) as { token?: string; error?: string };
+    const data = await parseJsonResponse<{ token?: string; error?: string }>(res);
     if (!res.ok) {
       window.alert(data.error ?? "Nieprawidłowe hasło.");
       return;
@@ -232,12 +244,13 @@ export function SiteConfigProvider({ children }: { children: ReactNode }) {
         },
         body: JSON.stringify(draft),
       });
-      const data = (await res.json()) as { config?: SiteConfig; error?: string };
+      const data = await parseJsonResponse<{ config?: SiteConfig; error?: string }>(res);
       if (!res.ok) {
         if (res.status === 401) {
           sessionStorage.removeItem(ADMIN_TOKEN_KEY);
           setAdminToken(null);
           setIsEditMode(false);
+          throw new Error("Sesja wygasła. Zaloguj się ponownie (Ctrl+Shift+E).");
         }
         throw new Error(data.error ?? "Nie udało się zapisać.");
       }
