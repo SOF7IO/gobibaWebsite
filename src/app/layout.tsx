@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { SITE, absoluteUrl } from "@/lib/site";
 import {
   buildLocalBusinessJsonLd,
@@ -8,6 +9,7 @@ import {
 import "./globals.css";
 
 const jsonLd = [buildLocalBusinessJsonLd(), buildWebSiteJsonLd(), buildServiceJsonLd()];
+const GA_MEASUREMENT_ID = "G-JRZES70B1X";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -71,6 +73,18 @@ export default function RootLayout({
   return (
     <html lang={SITE.language} suppressHydrationWarning>
       <body suppressHydrationWarning>
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script id="ga4-init" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${GA_MEASUREMENT_ID}');
+          `}
+        </Script>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
