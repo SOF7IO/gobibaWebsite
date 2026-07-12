@@ -5,6 +5,6 @@
 
   Run `npm run dev` to start the development server.
 
-  Click ctrl + shift + e to open ADMIN PANEL.
+  Click ctrl + shift + e to open ADMIN PANEL..
   
   
