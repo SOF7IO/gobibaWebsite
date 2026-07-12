@@ -11,13 +11,16 @@ const BLOB_PATH = "gobiba/site-config.json";
 const LOCAL_PATH = path.join(process.cwd(), ".data", "site-config.json");
 
 function hasBlobEnv(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
+  if (process.env.BLOB_READ_WRITE_TOKEN?.trim()) return true;
+  // Vercel production: store connected via OIDC + BLOB_STORE_ID (no token in env list)
+  if (process.env.BLOB_STORE_ID?.trim() && process.env.VERCEL) return true;
+  return false;
 }
 
 async function readBlobConfig(): Promise<SiteConfig | null> {
   const { get } = await import("@vercel/blob");
   const result = await get(BLOB_PATH, {
-    access: "public",
+    access: "private",
     useCache: false,
   });
   if (!result?.stream) return null;
@@ -29,7 +32,7 @@ async function readBlobConfig(): Promise<SiteConfig | null> {
 async function writeBlobConfig(config: SiteConfig): Promise<void> {
   const { put } = await import("@vercel/blob");
   await put(BLOB_PATH, JSON.stringify(config, null, 2), {
-    access: "public",
+    access: "private",
     allowOverwrite: true,
     contentType: "application/json",
     cacheControlMaxAge: 60,
