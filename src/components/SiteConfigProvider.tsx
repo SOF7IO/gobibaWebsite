@@ -10,8 +10,11 @@ import {
   type ReactNode,
 } from "react";
 import {
+  applyConfigToDevices,
   applyConfigToPackages,
-  getBookedDatesForPackage,
+  getUnavailableDatesForDevice,
+  getUnavailableDatesForDevices,
+  getUnavailableDatesForPackage,
   type SiteConfig,
 } from "@/lib/site-config";
 import {
@@ -20,6 +23,7 @@ import {
   type PackageData,
   type ServiceLevelId,
 } from "@/lib/packages-data";
+import { DEVICES_DATA, type DeviceData } from "@/lib/devices-data";
 
 const ADMIN_TOKEN_KEY = "gobiba-admin-token";
 
@@ -35,8 +39,15 @@ type SiteConfigContextValue = {
   loading: boolean;
   config: SiteConfig | null;
   packages: PackageData[];
+  /** Katalog sprzętu z cenami i kaucjami z panelu admina */
+  devices: DeviceData[];
   serviceLevels: ServiceLevelView[];
+  /** Terminy niedostępne dla pakietu (własne blokady + zajęty sprzęt) */
   getBookedDates: (packageId: string) => Set<string>;
+  /** Terminy niedostępne dla jednego urządzenia (blokady własne + pakiety z tym sprzętem) */
+  getDeviceBookedDates: (deviceId: string) => Set<string>;
+  /** Terminy niedostępne dla zestawu urządzeń wybranych w koszyku */
+  getDevicesBookedDates: (deviceIds: string[]) => Set<string>;
   isAdmin: boolean;
   isEditMode: boolean;
   saving: boolean;
@@ -45,7 +56,9 @@ type SiteConfigContextValue = {
   updatePackagePrice: (packageId: string, field: "price" | "deposit", value: number) => void;
   updateAddonPrice: (packageId: string, addonId: string, value: number) => void;
   updateServiceLevelPrice: (id: ServiceLevelId, value: number) => void;
+  updateDevicePrice: (deviceId: string, field: "price" | "deposit", value: number) => void;
   toggleBookedDate: (packageId: string, date: string) => void;
+  toggleDeviceBookedDate: (deviceId: string, date: string) => void;
   saveConfig: () => Promise<boolean>;
   exitEditMode: () => void;
   logoutAdmin: () => void;
@@ -153,8 +166,26 @@ export function SiteConfigProvider({ children }: { children: ReactNode }) {
     }));
   }, [draft]);
 
+  const devices = useMemo(
+    () => (draft ? applyConfigToDevices(DEVICES_DATA, draft) : DEVICES_DATA),
+    [draft],
+  );
+
   const getBookedDates = useCallback(
-    (packageId: string) => (draft ? getBookedDatesForPackage(draft, packageId) : new Set<string>()),
+    (packageId: string) =>
+      draft ? getUnavailableDatesForPackage(draft, packageId) : new Set<string>(),
+    [draft],
+  );
+
+  const getDeviceBookedDates = useCallback(
+    (deviceId: string) =>
+      draft ? getUnavailableDatesForDevice(draft, deviceId) : new Set<string>(),
+    [draft],
+  );
+
+  const getDevicesBookedDates = useCallback(
+    (deviceIds: string[]) =>
+      draft ? getUnavailableDatesForDevices(draft, deviceIds) : new Set<string>(),
     [draft],
   );
 
@@ -205,6 +236,42 @@ export function SiteConfigProvider({ children }: { children: ReactNode }) {
         serviceLevels: {
           ...draft.serviceLevels,
           [id]: Math.round(value),
+        },
+      });
+      setSaveSuccess(false);
+    },
+    [draft],
+  );
+
+  const updateDevicePrice = useCallback(
+    (deviceId: string, field: "price" | "deposit", value: number) => {
+      if (!draft || !Number.isFinite(value) || value < 0) return;
+      setDraft({
+        ...draft,
+        devices: {
+          ...draft.devices,
+          [deviceId]: {
+            ...draft.devices[deviceId],
+            [field]: Math.round(value),
+          },
+        },
+      });
+      setSaveSuccess(false);
+    },
+    [draft],
+  );
+
+  const toggleDeviceBookedDate = useCallback(
+    (deviceId: string, date: string) => {
+      if (!draft) return;
+      const current = new Set(draft.deviceBookedDates?.[deviceId] ?? []);
+      if (current.has(date)) current.delete(date);
+      else current.add(date);
+      setDraft({
+        ...draft,
+        deviceBookedDates: {
+          ...draft.deviceBookedDates,
+          [deviceId]: [...current].sort(),
         },
       });
       setSaveSuccess(false);
@@ -277,8 +344,11 @@ export function SiteConfigProvider({ children }: { children: ReactNode }) {
     loading,
     config: draft,
     packages,
+    devices,
     serviceLevels,
     getBookedDates,
+    getDeviceBookedDates,
+    getDevicesBookedDates,
     isAdmin: Boolean(adminToken),
     isEditMode,
     saving,
@@ -287,7 +357,9 @@ export function SiteConfigProvider({ children }: { children: ReactNode }) {
     updatePackagePrice,
     updateAddonPrice,
     updateServiceLevelPrice,
+    updateDevicePrice,
     toggleBookedDate,
+    toggleDeviceBookedDate,
     saveConfig,
     exitEditMode,
     logoutAdmin,

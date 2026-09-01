@@ -3,12 +3,14 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   X, Mic2, Tv2, Disc3, Presentation,
-  ChevronLeft, ChevronRight, ArrowRight, Check,
+  ArrowRight, Check, Speaker,
   Calendar, Users, Zap, Menu, Phone, Mail, MapPin, Sparkles,
   ShieldCheck, FileText, MousePointerClick,
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Sof7Logo } from "@/components/Sof7Logo";
+import { CalendarPicker, Steps } from "@/components/booking-widgets";
+import { DevicesSection } from "@/components/DevicesSection";
 import { useSiteConfig } from "@/components/SiteConfigProvider";
 import type { BookingRequestPayload } from "@/lib/booking";
 import {
@@ -38,11 +40,19 @@ const PACKAGE_TILE_STYLES: Record<string, { gradient: string; iconClass: string 
   presentation: { gradient: "from-black/6 via-black/3 to-[#fdf9ff]", iconClass: "text-[#130018]/70" },
 };
 
+const PACKAGE_IMAGES: Record<string, string> = {
+  karaoke: "/images/packages/pkg-karaoke.jpg",
+  "fan-zone": "/images/packages/pkg-fan-zone.jpg",
+  "party-tent": "/images/packages/pkg-party-tent.jpg",
+  presentation: "/images/packages/pkg-presentation.jpg",
+};
+
 const SITE_CONTAINER = "mx-auto w-full max-w-7xl 2xl:max-w-[max(80rem,60vw)]";
 const SECTION_INNER = `${SITE_CONTAINER} px-4 sm:px-6 xl:px-8`;
 
 const MOBILE_NAV = [
   { label: "Oferta", href: "#pakiety", Icon: Sparkles, desc: "Karaoke, kino, klub i więcej" },
+  { label: "Sprzęt", href: "#sprzet", Icon: Speaker, desc: "Sam skompletuj swój zestaw" },
   { label: "Jak to działa", href: "#jak-to-dziala", Icon: Zap, desc: "Rezerwacja w 3 krokach" },
   { label: "Kontakt", href: "#kontakt", Icon: Mail, desc: "Odpowiadamy w 24 h" },
 ] as const;
@@ -74,20 +84,20 @@ const HERO_TRUST = [
 const HOW_IT_WORKS = [
   {
     n: "01",
-    title: "Wybierz pakiet i obsługę",
-    desc: "Kliknij co Cię interesuje, sprawdź co wchodzi w skład i zdecyduj — czy zostajemy z Tobą, czy tylko składamy i wracamy po sprzęt.",
+    title: "Wybierz gotowy pakiet, lub skompletuj go sam",
+    desc: "Kliknij pakiet, żeby zobaczyć co wchodzi w skład i wybrać poziom obsługi. A jeśli wolisz po swojemu — w sekcji „Sam skompletuj swój zestaw” dorzucasz pojedynczy sprzęt do koszyka.",
     Icon: Sparkles,
   },
   {
     n: "02",
-    title: "Zarezerwuj termin",
-    desc: "Sprawdź wolny termin w kalendarzu i wyślij zapytanie. Oddzwonimy w ciągu 24 h i potwierdzimy całość.",
+    title: "Wybierz termin i wyślij zapytanie",
+    desc: "Zaznacz w kalendarzu jeden dzień lub kilka, zostaw namiary i wyślij. Potwierdzenie dostaniesz od razu mailem, a my oddzwonimy w ciągu 24 h.",
     Icon: Calendar,
   },
   {
     n: "03",
     title: "Impreza się rozkręca",
-    desc: "Przyjedziemy wcześniej, rozstawimy wszystko i sprawdzimy żeby działało. Ty zajmujesz się gośćmi.",
+    desc: "Wybierasz dowóz? Przyjeżdżamy wcześniej, rozstawiamy sprzęt i sprawdzamy, czy wszystko gra. Wolisz odebrać sam? Wydajemy sprzęt gotowy do pracy i pokazujemy obsługę. Tak czy siak jesteśmy pod telefonem przez całą imprezę.",
     Icon: Users,
   },
 ] as const;
@@ -111,103 +121,6 @@ function withPackageIcons(data: PackageData[]): Package[] {
     ...pkg,
     Icon: PACKAGE_ICONS[pkg.id as keyof typeof PACKAGE_ICONS],
   }));
-}
-
-// ─── Calendar ─────────────────────────────────────────────────────────────────
-
-const MONTHS_PL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
-const DAYS_PL = ["Pn","Wt","Śr","Cz","Pt","Sb","Nd"];
-
-function CalendarPicker({
-  selectedDates,
-  onToggle,
-  bookedDates,
-}: {
-  selectedDates: Set<string>;
-  onToggle: (d: string) => void;
-  bookedDates: Set<string>;
-}) {
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
-  const startOffset = (() => { const d = new Date(year, month, 1).getDay(); return d === 0 ? 6 : d - 1; })();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const fmt = (d: number) => `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  const isPast = (d: number) => new Date(year, month, d) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const prev = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
-  const next = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
-  const selectedCount = selectedDates.size;
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={prev} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/5 transition-colors">
-          <ChevronLeft className="w-4 h-4 text-black/30" />
-        </button>
-        <div className="text-center">
-          <span className="text-sm font-semibold text-black/60 tracking-wide block">{MONTHS_PL[month]} {year}</span>
-          {selectedCount > 0 && (
-            <span className="text-[10px] text-black/35">{selectedCount} {selectedCount === 1 ? "dzień wybrany" : selectedCount < 5 ? "dni wybrane" : "dni wybranych"}</span>
-          )}
-        </div>
-        <button type="button" onClick={next} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/5 transition-colors">
-          <ChevronRight className="w-4 h-4 text-black/30" />
-        </button>
-      </div>
-      <p className="text-[11px] text-black/35 -mt-1">Kliknij wiele dni — możesz zarezerwować na kilka dni z rzędu lub wybrane terminy.</p>
-      <div className="grid grid-cols-7 gap-1">
-        {DAYS_PL.map(d => <div key={d} className="text-center text-[10px] text-black/25 py-1 font-semibold">{d}</div>)}
-      </div>
-      <div className="grid grid-cols-7 gap-1">
-        {Array.from({ length: startOffset }).map((_, i) => <div key={`e${i}`} />)}
-        {Array.from({ length: daysInMonth }).map((_, i) => {
-          const day = i + 1; const str = fmt(day);
-          const booked = bookedDates.has(str); const past = isPast(day); const sel = selectedDates.has(str);
-          return (
-            <button key={day} type="button" disabled={booked || past} onClick={() => onToggle(str)}
-              className={[
-                "h-9 w-full flex items-center justify-center text-xs rounded-lg transition-all font-medium",
-                past || booked ? "text-black/15 cursor-not-allowed" : "text-black/50 hover:bg-black/6 hover:text-black cursor-pointer",
-                booked ? "line-through" : "",
-                sel ? "!bg-[#130018] !text-white" : "",
-              ].filter(Boolean).join(" ")}>
-              {day}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex gap-4 text-[10px] text-black/30 pt-3 border-t border-black/6">
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#130018]" />Wybrany</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-black/15" />Zajęty</span>
-      </div>
-    </div>
-  );
-}
-
-// ─── Step indicator ───────────────────────────────────────────────────────────
-
-function Steps({ current }: { current: 1 | 2 | 3 }) {
-  const steps = ["Wybierz daty", "Twoje dane", "Gotowe!"];
-  return (
-    <div className="flex items-center mb-7">
-      {steps.map((label, i) => {
-        const n = i + 1; const done = n < current; const active = n === current;
-        return (
-          <div key={label} className="flex items-center flex-1 last:flex-none">
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <div className={[
-                "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all",
-                done || active ? "bg-[#130018] text-white" : "bg-black/8 text-black/25",
-              ].join(" ")}>
-                {done ? <Check className="w-3 h-3" /> : n}
-              </div>
-              <span className={`text-xs hidden sm:block ${active ? "text-black/80 font-semibold" : done ? "text-black/35" : "text-black/20"}`}>{label}</span>
-            </div>
-            {i < steps.length - 1 && <div className={`h-px flex-1 mx-3 ${done ? "bg-[#130018]/30" : "bg-black/10"}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 // ─── Booking flow ─────────────────────────────────────────────────────────────
@@ -244,6 +157,8 @@ function BookingFlow({
   const svc = serviceLevels.find(s => s.id === serviceLevel)!;
   const chosenAddons = pkg.addons.filter(a => addonIds.has(a.id));
   const addonsPerDay = chosenAddons.reduce((s, a) => s + a.price, 0);
+  const addonsDeposit = chosenAddons.reduce((s, a) => s + (a.deposit ?? 0), 0);
+  const deposit = pkg.deposit + addonsDeposit;
   const dayCount = selectedDates.size;
   const deliveryKmNum = outsideDelivery ? Math.max(0, Number(deliveryKm) || 0) : 0;
   const deliveryFee = calcOutOfZoneDeliveryFee(deliveryKmNum);
@@ -356,8 +271,11 @@ function BookingFlow({
       {addonsTotal > 0 && <div className="flex justify-between"><span>Opcje ({dayCount} dni)</span><span>+{addonsTotal} zł</span></div>}
       {serviceTotal > 0 && <div className="flex justify-between"><span>{svc.name} ({dayCount} dni × {svc.priceAdd} zł)</span><span>+{serviceTotal} zł</span></div>}
       {deliveryFee > 0 && <div className="flex justify-between"><span>Dowóz poza strefą ({deliveryKmNum} km)</span><span>+{deliveryFee} zł</span></div>}
-      <div className="flex justify-between text-black/30"><span>Kaucja (zwrotna)</span><span>{pkg.deposit} zł</span></div>
-      <div className="flex justify-between text-sm font-bold text-black/80 pt-2 border-t border-black/6"><span>Razem</span><span>{subtotal + pkg.deposit} zł</span></div>
+      <div className="flex justify-between text-black/30">
+        <span>Kaucja (zwrotna){addonsDeposit > 0 && <> — pakiet {pkg.deposit} zł + opcje {addonsDeposit} zł</>}</span>
+        <span>{deposit} zł</span>
+      </div>
+      <div className="flex justify-between text-sm font-bold text-black/80 pt-2 border-t border-black/6"><span>Razem</span><span>{subtotal + deposit} zł</span></div>
     </div>
   );
   return (
@@ -471,7 +389,7 @@ function BookingFlow({
               {deliveryFee > 0 && (
                 <p className="text-black/20 text-xs mb-1">Dowóz poza strefą: +{deliveryKmNum} km (+{deliveryFee} zł)</p>
               )}
-              <p className="text-black/20 text-xs mb-8">Suma: {subtotal + pkg.deposit} zł (w tym kaucja {pkg.deposit} zł)</p>
+              <p className="text-black/20 text-xs mb-8">Suma: {subtotal + deposit} zł (w tym kaucja {deposit} zł)</p>
               <button onClick={onClose} className="px-8 py-3 border border-black/12 text-black/40 text-sm rounded-xl hover:bg-black/4 transition-colors">Zamknij</button>
             </div>
           )}
@@ -494,7 +412,9 @@ function PackageDetail({ pkg, onClose, onBook }: {
   const toggle = (id: string) =>
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const addonsTotal = pkg.addons.filter(a => selected.has(a.id)).reduce((s, a) => s + a.price, 0);
+  const chosen = pkg.addons.filter(a => selected.has(a.id));
+  const addonsTotal = chosen.reduce((s, a) => s + a.price, 0);
+  const depositTotal = pkg.deposit + chosen.reduce((s, a) => s + (a.deposit ?? 0), 0);
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col justify-end md:flex-row md:justify-end md:items-stretch" onClick={onClose}>
@@ -509,10 +429,18 @@ function PackageDetail({ pkg, onClose, onBook }: {
         </button>
 
         <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="flex items-center justify-center py-10 sm:py-14 bg-black/2 border-b border-black/6">
-          <div className="w-20 h-20 rounded-2xl bg-white border border-black/10 flex items-center justify-center shadow-sm">
-            <Icon className="w-9 h-9 text-black/50" />
-          </div>
+        <div className="flex items-center justify-center bg-white border-b border-black/6">
+          {PACKAGE_IMAGES[pkg.id] ? (
+            <img
+              src={PACKAGE_IMAGES[pkg.id]}
+              alt={pkg.name}
+              className="h-52 sm:h-64 w-auto object-contain py-4"
+            />
+          ) : (
+            <div className="w-20 h-20 rounded-2xl bg-white border border-black/10 flex items-center justify-center shadow-sm my-10 sm:my-14">
+              <Icon className="w-9 h-9 text-black/50" />
+            </div>
+          )}
         </div>
 
         <div className="px-5 sm:px-8 py-5 border-b border-black/6">
@@ -595,11 +523,13 @@ function PackageDetail({ pkg, onClose, onBook }: {
                 <span className="text-3xl font-black text-[#130018]">{pkg.price + addonsTotal} zł</span>
                 {addonsTotal > 0
                   ? <span className="text-xs text-black/30 line-through">{pkg.price} zł</span>
-                  : <span className="text-xs text-black/25">+ {pkg.deposit} zł kaucja</span>
+                  : <span className="text-xs text-black/25">+ {depositTotal} zł kaucja</span>
                 }
               </div>
               {addonsTotal > 0 && (
-                <p className="text-[11px] text-black/35 mt-0.5">baza {pkg.price} zł + opcje {addonsTotal} zł</p>
+                <p className="text-[11px] text-black/35 mt-0.5">
+                  baza {pkg.price} zł + opcje {addonsTotal} zł · kaucja {depositTotal} zł
+                </p>
               )}
             </div>
             <span className="flex items-center gap-1.5 text-xs text-black/30 flex-shrink-0">
@@ -621,6 +551,8 @@ function PackageDetail({ pkg, onClose, onBook }: {
 function LargeTile({ pkg, onClick }: { pkg: Package; onClick: () => void }) {
   const Icon = pkg.Icon;
   const tileStyle = PACKAGE_TILE_STYLES[pkg.id] ?? PACKAGE_TILE_STYLES.presentation;
+  const image = PACKAGE_IMAGES[pkg.id];
+  const [imgFailed, setImgFailed] = useState(false);
 
   return (
     <button
@@ -629,14 +561,24 @@ function LargeTile({ pkg, onClick }: { pkg: Package; onClick: () => void }) {
       className="group w-full text-left cursor-pointer active:scale-[0.98] transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[#130018]/25 rounded-xl"
     >
       <div
-        className={`rounded-xl overflow-hidden relative mb-2.5 sm:mb-3 aspect-square bg-gradient-to-br ${tileStyle.gradient} border border-black/6 transition-transform duration-300 group-hover:scale-[1.02]`}
+        className={`rounded-xl overflow-hidden relative mb-2.5 sm:mb-3 aspect-square ${image && !imgFailed ? "bg-white" : `bg-gradient-to-br ${tileStyle.gradient}`} border border-black/6 transition-transform duration-300 group-hover:scale-[1.02]`}
       >
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Icon
-            className={`w-[5.25rem] h-[5.25rem] sm:w-24 sm:h-24 xl:w-[6.75rem] xl:h-[6.75rem] ${tileStyle.iconClass} transition-transform duration-500 group-hover:scale-110`}
-            strokeWidth={1.25}
+        {image && !imgFailed ? (
+          <img
+            src={image}
+            alt={pkg.name}
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-contain p-2 transition-transform duration-500 group-hover:scale-105"
+            onError={() => setImgFailed(true)}
           />
-        </div>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Icon
+              className={`w-[5.25rem] h-[5.25rem] sm:w-24 sm:h-24 xl:w-[6.75rem] xl:h-[6.75rem] ${tileStyle.iconClass} transition-transform duration-500 group-hover:scale-110`}
+              strokeWidth={1.25}
+            />
+          </div>
+        )}
         <div className="absolute bottom-3 left-3 lg:bottom-4 lg:left-4">
           <span className="text-[9px] lg:text-[10px] xl:text-[11px] font-semibold uppercase tracking-widest px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-black/45 bg-white/85 backdrop-blur-sm border border-black/8">
             {pkg.category}
@@ -707,159 +649,59 @@ function DesktopPackagesHint() {
   );
 }
 
-// ─── Mobile horizontal packages scroller ─────────────────────────────────────
+// ─── Mobile packages carousel (native scroll-snap) ──────────────────────────
 
-const MOBILE_PACKAGE_SCROLL_RANGE_MULTIPLIER = 2;
-const MOBILE_PACKAGE_SCROLL_SMOOTHING = 0.16;
-
-function MobilePackagesScroller({
+function MobilePackagesCarousel({
   packages,
   onSelect,
 }: {
   packages: Package[];
   onSelect: (pkg: Package) => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const stickyRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const metricsRef = useRef({ maxTranslate: 0, endHold: 0, scrollStart: 0, scrollEnd: 1, scrollRange: 0 });
-  const activeIdxRef = useRef(0);
-  const translateRef = useRef(0);
-  const targetTranslateRef = useRef(0);
-  const rafRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [activeIdx, setActiveIdx] = useState(0);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    const track = trackRef.current;
-    if (!container || !track) return;
-
-    const measure = () => {
-      const cards = track.children;
-      const first = cards[0] as HTMLElement | undefined;
-      const last = cards[cards.length - 1] as HTMLElement | undefined;
-
-      const viewport = window.innerWidth;
-
-      const maxTranslate = first && last
-        ? Math.max(0, (last.offsetLeft + last.offsetWidth / 2) - (first.offsetLeft + first.offsetWidth / 2))
-        : Math.max(0, track.scrollWidth - viewport);
-
-      const endHold = Math.round(window.innerHeight * 0.12);
-      const stickySpan = stickyRef.current?.offsetHeight ?? window.innerHeight;
-      const scrollRange = maxTranslate * MOBILE_PACKAGE_SCROLL_RANGE_MULTIPLIER;
-      container.style.height = `${scrollRange + endHold + stickySpan}px`;
-
-      const rect = container.getBoundingClientRect();
-      const scrollStart = window.scrollY + rect.top;
-      const scrollEnd = scrollStart + scrollRange + endHold;
-      metricsRef.current = { maxTranslate, endHold, scrollStart, scrollEnd, scrollRange };
-    };
-
-    const applyTransform = () => {
-      translateRef.current += (targetTranslateRef.current - translateRef.current) * MOBILE_PACKAGE_SCROLL_SMOOTHING;
-      if (Math.abs(targetTranslateRef.current - translateRef.current) < 0.35) {
-        translateRef.current = targetTranslateRef.current;
-      }
-      track.style.transform = `translate3d(-${translateRef.current}px, 0, 0)`;
-      rafRef.current = requestAnimationFrame(applyTransform);
-    };
-
-    const onScroll = () => {
-      const { maxTranslate, scrollStart, scrollEnd, scrollRange } = metricsRef.current;
-      const y = window.scrollY;
-
-      let progress = 0;
-      if (y <= scrollStart) progress = 0;
-      else if (y >= scrollEnd) progress = 1;
-      else if (scrollRange === 0) progress = 0;
-      else progress = Math.min(1, (y - scrollStart) / scrollRange);
-
-      targetTranslateRef.current = progress * maxTranslate;
-
-      const idx = progress >= 1
-        ? packages.length - 1
-        : maxTranslate === 0
-          ? 0
-          : Math.min(
-              packages.length - 1,
-              Math.round(progress * (packages.length - 1)),
-            );
-      if (idx !== activeIdxRef.current) {
-        activeIdxRef.current = idx;
-        setActiveIdx(idx);
-      }
-    };
-
-    measure();
-    onScroll();
-    rafRef.current = requestAnimationFrame(applyTransform);
-    requestAnimationFrame(() => {
-      measure();
-      onScroll();
-    });
-
-    const onResize = () => {
-      measure();
-      onScroll();
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onResize);
-
-    const ro = new ResizeObserver(onResize);
-    ro.observe(track);
-    if (stickyRef.current) ro.observe(stickyRef.current);
-
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
-      ro.disconnect();
-    };
-  }, [packages.length]);
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const progress = el.scrollLeft / (el.scrollWidth - el.clientWidth);
+    setActiveIdx(Math.min(packages.length - 1, Math.round(progress * (packages.length - 1))));
+  };
 
   return (
-    <div ref={containerRef} className="sm:hidden relative -mx-4 mb-5">
-      <div ref={stickyRef} className="sticky top-14 z-10 flex flex-col justify-start pt-4 pb-3 overflow-hidden">
-        <p className="text-center text-[10px] uppercase tracking-[0.25em] text-black/30 mb-3 px-4">
-          Przewiń w dół, żeby zobaczyć kolejne pakiety
-        </p>
+    <div className="sm:hidden mb-5">
+      <p className="flex items-center justify-center gap-1.5 text-[10px] text-black/35 mb-3 px-4">
+        <MousePointerClick className="w-3 h-3 flex-shrink-0 opacity-70" strokeWidth={1.75} />
+        Przesuń palcem i dotknij pakiet — szczegóły i rezerwacja
+      </p>
 
-        <p className="flex items-center justify-center gap-1.5 text-[9px] text-black/35 mb-4 px-4">
-          <MousePointerClick className="w-3 h-3 flex-shrink-0 opacity-70" strokeWidth={1.75} />
-          Dotknij pakiet — szczegóły i rezerwacja
-        </p>
-
-        <div className="overflow-hidden">
-          <div
-            ref={trackRef}
-            className="flex gap-3 pl-[max(1rem,calc((100vw-82vw)/2))] pr-[max(1rem,calc((100vw-82vw)/2))] will-change-transform"
-          >
-            {packages.map((pkg) => (
-              <div key={pkg.id} className="w-[82vw] max-w-[19rem] flex-shrink-0">
-                <LargeTile pkg={pkg} onClick={() => onSelect(pkg)} />
-              </div>
-            ))}
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="flex gap-3 overflow-x-auto -mx-4 px-[max(1rem,calc((100vw-82vw)/2))] pb-2 snap-x snap-mandatory scroll-px-[max(1rem,calc((100vw-82vw)/2))] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {packages.map((pkg) => (
+          <div key={pkg.id} className="w-[82vw] max-w-[19rem] flex-shrink-0 snap-center">
+            <LargeTile pkg={pkg} onClick={() => onSelect(pkg)} />
           </div>
-        </div>
-
-        <div className="flex justify-center items-center gap-2 mt-4 px-4">
-          {packages.map((pkg, i) => (
-            <div
-              key={pkg.id}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === activeIdx ? "w-6 bg-[#130018]" : "w-1.5 bg-black/15"
-              }`}
-            />
-          ))}
-        </div>
-        <p className="text-center text-[10px] text-black/25 mt-2 px-4 tabular-nums">
-          {activeIdx + 1} / {packages.length}
-        </p>
-
-        <IndividualInquiryCTA mobileSticky />
+        ))}
       </div>
+
+      <div className="flex justify-center items-center gap-2 mt-3 px-4">
+        {packages.map((pkg, i) => (
+          <div
+            key={pkg.id}
+            className={`h-1.5 rounded-full transition-all duration-300 ${
+              i === activeIdx ? "w-6 bg-[#130018]" : "w-1.5 bg-black/15"
+            }`}
+          />
+        ))}
+      </div>
+      <p className="text-center text-[10px] text-black/25 mt-1.5 px-4 tabular-nums">
+        {activeIdx + 1} / {packages.length}
+      </p>
+
+      <IndividualInquiryCTA mobileSticky />
     </div>
   );
 }
@@ -941,7 +783,7 @@ export default function Home() {
             <ImageWithFallback src={logoMark} alt="gobiba" className="h-9 sm:h-[3.75rem] w-auto object-contain" />
           </a>
           <div className="hidden md:flex items-center gap-6 lg:gap-7 text-sm lg:text-[15px] xl:text-base text-black/45 ml-auto mr-6 lg:mr-8">
-            {[["Oferta", "#pakiety"], ["Jak to działa", "#jak-to-dziala"], ["Kontakt", "#kontakt"]].map(([l, h]) => (
+            {[["Oferta", "#pakiety"], ["Sprzęt", "#sprzet"], ["Jak to działa", "#jak-to-dziala"], ["Kontakt", "#kontakt"]].map(([l, h]) => (
               <a key={l} href={h} className="hover:text-black/80 transition-colors font-medium">{l}</a>
             ))}
           </div>
@@ -1115,7 +957,7 @@ export default function Home() {
         </div>
 
         <div id="pakiety-tiles">
-        <MobilePackagesScroller packages={packages} onSelect={setDetailPkg} />
+        <MobilePackagesCarousel packages={packages} onSelect={setDetailPkg} />
 
         <DesktopPackagesHint />
 
@@ -1133,6 +975,8 @@ export default function Home() {
         </div>
         </div>
       </section>
+
+      <DevicesSection />
 
       <section
         id="jak-to-dziala"

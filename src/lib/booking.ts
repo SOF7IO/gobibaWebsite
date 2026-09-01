@@ -41,6 +41,11 @@ export type BookingPricing = {
   addonsTotal: number;
   serviceTotal: number;
   deliveryFee: number;
+  /** Kaucja bazowa pakietu */
+  packageDeposit: number;
+  /** Kaucja doliczona za wybrane dodatkowe wyposażenie */
+  addonsDeposit: number;
+  /** Kaucja łączna (pakiet + dodatki) */
   deposit: number;
   subtotal: number;
   totalWithDeposit: number;
@@ -104,6 +109,9 @@ export function calculateBookingPricing(input: {
   const addonsTotal = addonsPerDay * dayCount;
   const serviceTotal = priceAdd * dayCount;
   const subtotal = packageTotal + addonsTotal + serviceTotal + deliveryFee;
+  // Kaucja rośnie wraz z dodatkowym wyposażeniem wybranym do pakietu.
+  const addonsDeposit = input.addons.reduce((sum, addon) => sum + (addon.deposit ?? 0), 0);
+  const deposit = input.pkg.deposit + addonsDeposit;
 
   return {
     dayCount,
@@ -111,9 +119,11 @@ export function calculateBookingPricing(input: {
     addonsTotal,
     serviceTotal,
     deliveryFee,
-    deposit: input.pkg.deposit,
+    packageDeposit: input.pkg.deposit,
+    addonsDeposit,
+    deposit,
     subtotal,
-    totalWithDeposit: subtotal + input.pkg.deposit,
+    totalWithDeposit: subtotal + deposit,
   };
 }
 

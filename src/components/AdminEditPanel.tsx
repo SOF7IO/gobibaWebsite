@@ -3,6 +3,10 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Save, X } from "lucide-react";
 import { useSiteConfig } from "@/components/SiteConfigProvider";
+import {
+  getUnavailableDatesForDevice,
+  getUnavailableDatesForPackage,
+} from "@/lib/site-config";
 
 const MONTHS_PL = [
   "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
@@ -14,6 +18,7 @@ export function AdminEditPanel() {
   const {
     isEditMode,
     packages,
+    devices,
     serviceLevels,
     config,
     saving,
@@ -22,21 +27,41 @@ export function AdminEditPanel() {
     updatePackagePrice,
     updateAddonPrice,
     updateServiceLevelPrice,
+    updateDevicePrice,
     toggleBookedDate,
+    toggleDeviceBookedDate,
     saveConfig,
     exitEditMode,
     logoutAdmin,
   } = useSiteConfig();
 
-  const [activePackageId, setActivePackageId] = useState(packages[0]?.id ?? "karaoke");
+  // W kalendarzu wybieramy albo pakiet ("pkg:id"), albo urządzenie ("dev:id").
+  const [activeTarget, setActiveTarget] = useState(`pkg:${packages[0]?.id ?? "karaoke"}`);
+  const [kind, targetId] = activeTarget.split(":") as ["pkg" | "dev", string];
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-  const [tab, setTab] = useState<"calendar" | "prices">("calendar");
+  const [tab, setTab] = useState<"calendar" | "prices" | "devices">("calendar");
 
-  const bookedSet = useMemo(() => {
-    return new Set(config?.bookedDates[activePackageId] ?? []);
-  }, [activePackageId, config?.bookedDates]);
+  // Zaznaczamy tylko blokady ustawione ręcznie dla tego celu; terminy zajęte
+  // przez powiązany sprzęt/pakiety pokazujemy osobno jako „zajęte pośrednio”.
+  const ownBooked = useMemo(() => {
+    if (!config) return new Set<string>();
+    return new Set(
+      kind === "pkg"
+        ? config.bookedDates[targetId] ?? []
+        : config.deviceBookedDates?.[targetId] ?? [],
+    );
+  }, [kind, targetId, config]);
+
+  const inheritedBooked = useMemo(() => {
+    if (!config) return new Set<string>();
+    const all =
+      kind === "pkg"
+        ? getUnavailableDatesForPackage(config, targetId)
+        : getUnavailableDatesForDevice(config, targetId);
+    return new Set([...all].filter((d) => !ownBooked.has(d)));
+  }, [kind, targetId, config, ownBooked]);
 
   if (!isEditMode || !config) return null;
 
@@ -92,7 +117,7 @@ export function AdminEditPanel() {
           )}
 
           <div className="flex border-b border-black/8">
-            {(["calendar", "prices"] as const).map((key) => (
+            {(["calendar", "prices", "devices"] as const).map((key) => (
               <button
                 key={key}
                 type="button"
@@ -101,7 +126,7 @@ export function AdminEditPanel() {
                   tab === key ? "text-[#130018] border-b-2 border-[#130018]" : "text-black/40"
                 }`}
               >
-                {key === "calendar" ? "Kalendarz" : "Ceny"}
+                {key === "calendar" ? "Kalendarz" : key === "prices" ? "Pakiety" : "Sprzęt"}
               </button>
             ))}
           </div>
@@ -110,19 +135,35 @@ export function AdminEditPanel() {
             {tab === "calendar" && (
               <>
                 <div>
-                  <label className="text-[10px] uppercase tracking-wider text-black/40 block mb-1.5">Pakiet</label>
+                  <label className="text-[10px] uppercase tracking-wider text-black/40 block mb-1.5">Pakiet lub sprzęt</label>
                   <select
-                    value={activePackageId}
-                    onChange={(e) => setActivePackageId(e.target.value)}
+                    value={activeTarget}
+                    onChange={(e) => setActiveTarget(e.target.value)}
                     className="w-full rounded-xl border border-black/10 px-3 py-2 text-sm"
                   >
-                    {packages.map((pkg) => (
-                      <option key={pkg.id} value={pkg.id}>{pkg.name}</option>
-                    ))}
+                    <optgroup label="Pakiety">
+                      {packages.map((pkg) => (
+                        <option key={pkg.id} value={`pkg:${pkg.id}`}>{pkg.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Pojedynczy sprzęt">
+                      {devices.map((d) => (
+                        <option key={d.id} value={`dev:${d.id}`}>{d.name}</option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
 
-                <p className="text-xs text-black/45">Kliknij dzień, żeby oznaczyć go jako zajęty lub wolny.</p>
+                <p className="text-xs text-black/45">
+                  Kliknij dzień, żeby oznaczyć go jako zajęty lub wolny. Blokada pakietu zajmuje
+                  jego sprzęt, a blokada sprzętu unieważnia pakiety, w których on jedzie —
+                  takie dni są tu wyszarzone.
+                </p>
+                <div className="flex flex-wrap gap-3 text-[10px] text-black/45">
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-red-100 border border-red-200" />Zablokowane tutaj</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-black/10 border border-black/15" />Zajęte pośrednio</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-emerald-50 border border-emerald-100" />Wolne</span>
+                </div>
 
                 <div className="flex items-center justify-between">
                   <button type="button" onClick={() => {
@@ -146,17 +187,25 @@ export function AdminEditPanel() {
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1;
                     const str = fmt(day);
-                    const booked = bookedSet.has(str);
+                    const booked = ownBooked.has(str);
+                    const inherited = inheritedBooked.has(str);
                     return (
                       <button
                         key={day}
                         type="button"
-                        onClick={() => toggleBookedDate(activePackageId, str)}
+                        title={inherited ? "Zajęte przez powiązany pakiet lub sprzęt" : undefined}
+                        onClick={() =>
+                          kind === "pkg"
+                            ? toggleBookedDate(targetId, str)
+                            : toggleDeviceBookedDate(targetId, str)
+                        }
                         className={[
                           "h-9 rounded-lg text-xs font-medium transition-colors",
                           booked
                             ? "bg-red-100 text-red-700 line-through border border-red-200"
-                            : "bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100",
+                            : inherited
+                              ? "bg-black/8 text-black/40 line-through border border-black/12"
+                              : "bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100",
                         ].join(" ")}
                       >
                         {day}
@@ -165,6 +214,40 @@ export function AdminEditPanel() {
                   })}
                 </div>
               </>
+            )}
+
+            {tab === "devices" && (
+              <div className="space-y-2">
+                <p className="text-xs text-black/45">
+                  Ceny i kaucje pojedynczego sprzętu. Zmiana przelicza też ceny pakietów
+                  i dopłat, w których ten sprzęt jedzie.
+                </p>
+                {devices.map((device) => (
+                  <div key={device.id} className="flex items-center gap-3 rounded-xl border border-black/8 p-2.5">
+                    <span className="flex-1 text-xs text-black/60 leading-snug">{device.name}</span>
+                    <label className="text-[10px] text-black/40 text-right">
+                      zł / doba
+                      <input
+                        type="number"
+                        min={0}
+                        value={config.devices?.[device.id]?.price ?? device.price}
+                        onChange={(e) => updateDevicePrice(device.id, "price", Number(e.target.value))}
+                        className="mt-0.5 w-20 rounded-lg border border-black/10 px-2 py-1 text-sm text-right"
+                      />
+                    </label>
+                    <label className="text-[10px] text-black/40 text-right">
+                      kaucja
+                      <input
+                        type="number"
+                        min={0}
+                        value={config.devices?.[device.id]?.deposit ?? device.deposit}
+                        onChange={(e) => updateDevicePrice(device.id, "deposit", Number(e.target.value))}
+                        className="mt-0.5 w-20 rounded-lg border border-black/10 px-2 py-1 text-sm text-right"
+                      />
+                    </label>
+                  </div>
+                ))}
+              </div>
             )}
 
             {tab === "prices" && (
