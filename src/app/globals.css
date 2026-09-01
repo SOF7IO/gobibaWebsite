@@ -7,3 +7,11 @@ body {
   height: 100%;
   margin: 0;
 }
+
+/* Tailwind v4 resetuje kursor przycisków do `default` — przywracamy wskaźnik dłoni. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label:has(> input[type="checkbox"]),
+summary {
+  cursor: pointer;
+}

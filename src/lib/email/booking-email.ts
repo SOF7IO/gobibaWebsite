@@ -45,7 +45,11 @@ export function buildBookingEmailText(summary: BookingSummary): string {
     ...(pricing.addonsTotal > 0 ? [`- Opcje: +${formatPln(pricing.addonsTotal)}`] : []),
     ...(pricing.serviceTotal > 0 ? [`- Obsługa: +${formatPln(pricing.serviceTotal)}`] : []),
     ...(pricing.deliveryFee > 0 ? [`- Dowóz poza strefą: +${formatPln(pricing.deliveryFee)}`] : []),
-    `- Kaucja (zwrotna): ${formatPln(pricing.deposit)}`,
+    `- Kaucja (zwrotna): ${formatPln(pricing.deposit)}${
+      pricing.addonsDeposit > 0
+        ? ` (pakiet ${formatPln(pricing.packageDeposit)} + opcje ${formatPln(pricing.addonsDeposit)})`
+        : ""
+    }`,
     `- RAZEM: ${formatPln(pricing.totalWithDeposit)} (w tym kaucja)`,
     "",
     "DANE KONTAKTOWE",
@@ -85,7 +89,11 @@ export function buildBookingEmailHtml(summary: BookingSummary): string {
     pricing.deliveryFee > 0
       ? `<tr><td style="padding:4px 0;color:#555">Dowóz poza strefą (+${delivery.km} km)</td><td style="padding:4px 0;text-align:right">+${formatPln(pricing.deliveryFee)}</td></tr>`
       : "",
-    `<tr><td style="padding:4px 0;color:#555">Kaucja (zwrotna)</td><td style="padding:4px 0;text-align:right">${formatPln(pricing.deposit)}</td></tr>`,
+    `<tr><td style="padding:4px 0;color:#555">Kaucja (zwrotna)${
+      pricing.addonsDeposit > 0
+        ? ` <span style="color:#888">— pakiet ${formatPln(pricing.packageDeposit)} + opcje ${formatPln(pricing.addonsDeposit)}</span>`
+        : ""
+    }</td><td style="padding:4px 0;text-align:right">${formatPln(pricing.deposit)}</td></tr>`,
     `<tr><td style="padding:8px 0 4px;font-weight:700;border-top:1px solid #eee">Razem</td><td style="padding:8px 0 4px;text-align:right;font-weight:700;border-top:1px solid #eee">${formatPln(pricing.totalWithDeposit)}</td></tr>`,
   ]
     .filter(Boolean)
